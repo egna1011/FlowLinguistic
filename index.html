@@ -767,51 +767,65 @@ input[type="text"] { background-image: none; padding-right: 13px; }
 
 <div class="toast" id="toast"></div>
 
-<!-- Firebase SDK -->
-<script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getDatabase, ref, set, get, onValue, push, remove, off }
-  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+<!-- Firebase SDK (compat — works with regular onclick handlers) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
 
 // ─────────────────────────────────────────────────────────
 //  🔧 PASTE YOUR FIREBASE CONFIG HERE
 //  (replace the placeholder values below with your own)
 // ─────────────────────────────────────────────────────────
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT.firebaseapp.com",
-  databaseURL:       "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-  projectId:         "YOUR_PROJECT",
-  storageBucket:     "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID"
-};
+  apiKey: "AIzaSyCJR6HQSq4Z7_TnG46d8YqF1og2cX4biao",
+  authDomain: "flowlinguistic.firebaseapp.com",
+  databaseURL: "https://flowlinguistic-default-rtdb.firebaseio.com",
+  projectId: "flowlinguistic",
+  storageBucket: "flowlinguistic.firebasestorage.app",
+  messagingSenderId: "215050443879",
+  appId: "1:215050443879:web:92e2cd4d8b800da21348c2",
+  measurementId: "G-V38NB56X83"};
 // ─────────────────────────────────────────────────────────
 
-const app = initializeApp(firebaseConfig);
-const db  = getDatabase(app);
+// Guard: show helpful error if config not filled in
+if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+  document.addEventListener("DOMContentLoaded", () => {
+    document.body.innerHTML = `
+      <div style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f5f4f0;padding:24px;">
+        <div style="background:#fff;border:1px solid #e2e0d8;border-radius:12px;padding:40px 36px;max-width:480px;box-shadow:0 4px 24px rgba(0,0,0,0.08)">
+          <div style="font-size:2rem;margin-bottom:12px">🔧</div>
+          <h2 style="margin-bottom:12px;color:#1c1b18">Firebase not configured</h2>
+          <p style="color:#7a7870;line-height:1.6;margin-bottom:16px">Open <code>index.html</code> in a text editor and replace the placeholder values in the <code>firebaseConfig</code> block with your real Firebase credentials.</p>
+        </div>
+      </div>`;
+  });
+  throw new Error("Firebase config not set.");
+}
 
-// ── helpers ──────────────────────────────────────────────
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ── helpers (Firebase compat API) ────────────────────────
 function dbRef(code, ...path) {
-  return ref(db, ['calls', code, ...path].join('/'));
+  return db.ref(['calls', code, ...path].join('/'));
 }
 async function sigW(code, key, data) {
-  await set(dbRef(code, key), data);
+  await dbRef(code, key).set(data);
 }
 async function sigWPush(code, key, data) {
-  await push(dbRef(code, key), data);
+  await dbRef(code, key).push(data);
 }
 async function sigR(code, key) {
-  const snap = await get(dbRef(code, key));
+  const snap = await dbRef(code, key).once('value');
   return snap.exists() ? snap.val() : null;
 }
 function sigListen(code, key, cb) {
   const r = dbRef(code, key);
-  onValue(r, snap => { if (snap.exists()) cb(snap.val()); });
-  return () => off(r);
+  r.on('value', snap => { if (snap.exists()) cb(snap.val()); });
+  return () => r.off('value');
 }
 async function sigClear(code) {
-  await remove(ref(db, `calls/${code}`));
+  await db.ref(`calls/${code}`).remove();
 }
 
 // ── constants ─────────────────────────────────────────────
@@ -891,7 +905,6 @@ async function createCall(){
   await sigW(myCode,'meta_creator',{speakLang:mySpeakLang});
   await setupCreator();
 }
-window.createCall=createCall;
 
 // ── join call ─────────────────────────────────────────────
 async function joinCall(){
@@ -915,7 +928,6 @@ async function joinCall(){
   await sigW(myCode,'meta_joiner',{speakLang:mySpeakLang});
   await setupJoiner();
 }
-window.joinCall=joinCall;
 
 // ── WebRTC peer connection ────────────────────────────────
 function makePC(){
@@ -1007,8 +1019,8 @@ async function setupJoiner(){
 // ── trickle ICE via Firebase ──────────────────────────────
 function listenICE(side){
   const seenKeys=new Set();
-  const r=ref(db,`calls/${myCode}/ice_${side}`);
-  onValue(r,snap=>{
+  const r=db.ref(`calls/${myCode}/ice_${side}`);
+  r.on('value', snap=>{
     if(!snap.exists())return;
     snap.forEach(child=>{
       if(seenKeys.has(child.key))return;
@@ -1019,7 +1031,7 @@ function listenICE(side){
       }
     });
   });
-  unsubscribers.push(()=>off(r));
+  unsubscribers.push(()=>r.off('value'));
 }
 
 // ── data channel ──────────────────────────────────────────
@@ -1081,8 +1093,6 @@ function updateSpeakLang(){
 function updateHearLang(){
   myHearLang=document.getElementById('room-hear-lang').value;
 }
-window.updateSpeakLang=updateSpeakLang;
-window.updateHearLang=updateHearLang;
 
 // ── translation ───────────────────────────────────────────
 async function translate(text,from,to){
@@ -1145,8 +1155,7 @@ function endCall(){
   document.getElementById('messages').innerHTML=`<div class="empty-state" id="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><p>Translated speech will appear here during the conversation.</p></div>`;
   myCode=null;
 }
-window.toggleMic=toggleMic;window.toggleCam=toggleCam;window.toggleTranscription=toggleTranscription;window.endCall=endCall;
-window.copyCode=copyCode;
+
 
 // ── lobby language guard ──────────────────────────────────
 ['create','join'].forEach(prefix=>{
